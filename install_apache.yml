@@ -1,0 +1,103 @@
+---
+- hosts: webservers
+  tasks:
+    - name: Install Apache2
+      apt:
+        name: apache2
+        update_cache: yes
+        state: latest
+
+    - name: Install Python3
+      apt:
+        name: python3
+        update_cache: yes
+        state: latest
+
+    - name: Enable userdir module
+      command: a2enmod userdir
+      notify: Restart Apache
+
+    - name: Create public_html directory for user
+      file:
+        path: "/home/{{ ansible_user }}/public_html"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+
+    - name: Remove the default Apache configuration
+      file:
+        path: /etc/apache2/sites-available/000-default.conf
+        state: absent
+
+    - name: Add custom index.html for testing
+      copy:
+        dest: "/var/www/html/index.html"
+        content: >
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+               <meta charset="UTF-8">
+               <meta name="viewport" content="width=device-width, initial-scale=1.0">
+               <title>Adrian Vorms - ITS22</title>
+               <style>
+                    body {
+                        margin: 0;
+                        height: 100vh;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        font-family: Arial, sans-serif;
+                        background: url('https://www.icegif.com/wp-content/uploads/2023/09/icegif-184.gif') no-repeat center center fixed;
+                        background-size: cover;
+                        color: white;
+                        text-align: center;
+                        overflow: hidden;
+                      }
+
+                      h1 {
+                         font-size: 5em;
+                         margin: 0;
+                         animation: moveLetters 3s infinite alternate;
+                      }
+
+                      h2 {
+                         font-size: 10em;
+                         margin: 0;
+                         margin-top: 20px;
+                      }
+
+                      @keyframes moveLetters {
+                           0% { transform: translateX(-20px); }
+                           100% { transform: translateX(20px); }
+                      }
+                   </style>
+               </head>
+               <body>
+                  <h1>Adrian Vorms</h1>
+                  <h2>ITS22</h2>
+                  <div id="system-info"></div> <!-- Placeholder for system info -->
+                  <script>
+                  // Fetch and display system info
+                  fetch('system_info.json')
+                      .then(response => response.json())
+                      .then(data => {
+                          document.getElementById('system-info').innerHTML = `
+                              <strong>Hostname:</strong> ${data.hostname}<br>
+                              <strong>Uptime:</strong> ${data.uptime}<br>
+                              <strong>OS Version:</strong> ${data.os_version}<br>
+                          `;
+                      });
+              </script>
+          </body>
+          </html>
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0644"
+    
+  handlers:
+    - name: Restart Apache
+      service:
+        name: apache2
+        state: restarted

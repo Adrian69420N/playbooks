@@ -1,0 +1,252 @@
+---
+- hosts: webservers
+  become: yes  # Use sudo privileges
+  vars:
+    flask_email: "adrian.vorms@voco.ee"  # Your email address
+    flask_password: "your_gmail_app_password"  # Your Gmail app password
+    flask_app_path: "/opt/flask_app.py"  # Path for Flask application
+    flask_service_name: "flask_app"  # Service name for Flask application
+
+  tasks:
+    - name: Install required packages
+      apt:
+        name:
+          - python3-pip
+          - python3-flask
+          - python3-flask-mail
+          - python3-venv
+          - python3-requests
+          - apache2
+          - libapache2-mod-wsgi-py3
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Create directory for Flask application
+      file:
+        path: /opt
+        state: directory
+        mode: '0755'
+
+    - name: Create directory for templates
+      file:
+        path: /opt/templates
+        state: directory
+        mode: '0755'
+
+    - name: Create Flask application
+      copy:
+        dest: "{{ flask_app_path }}"
+        content: |
+          from flask import Flask, render_template, request, jsonify
+          from flask_mail import Mail, Message
+          import random
+          import os
+
+          app = Flask(__name__)
+
+          # Configure Flask-Mail
+          app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+          app.config['MAIL_PORT'] = 587
+          app.config['MAIL_USE_TLS'] = True
+          app.config['MAIL_USERNAME'] = '{{ flask_email }}'
+          app.config['MAIL_PASSWORD'] = '{{ flask_password }}'
+          app.config['MAIL_DEFAULT_SENDER'] = app.config['MAIL_USERNAME']
+          mail = Mail(app)
+
+          verification_code = None
+
+          @app.route('/')
+          def home():
+              return render_template('index.html')
+
+          @app.route('/send_code', methods=['POST'])
+          def send_code():
+              global verification_code
+              verification_code = str(random.randint(1000, 9999))
+
+              msg = Message('Your Verification Code', recipients=[app.config['MAIL_USERNAME']])
+              msg.body = f'Your verification code is: {verification_code}'
+
+              try:
+                  mail.send(msg)
+                  return jsonify({'message': 'Verification code sent!'}), 200
+              except Exception as e:
+                  return jsonify({'message': 'Error sending verification code: ' + str(e)}), 500
+
+          @app.route('/validate_code', methods=['POST'])
+          def validate_code():
+              global verification_code
+              data = request.get_json()
+              code = data['code']
+              if code == verification_code:
+                  verification_code = None
+                  return jsonify({'message': 'Access Granted!'}), 200
+              else:
+                  return jsonify({'message': 'Access Denied!'}), 403
+
+          if __name__ == '__main__':
+              app.run(host='0.0.0.0', port=5000)
+
+    - name: Create HTML template for Flask application
+      copy:
+        dest: /opt/templates/index.html
+        content: |
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>System Info & Verification</title>
+              <style>
+                  body {
+                      margin: 0;
+                      background-color: #000;
+                      color: #fff;
+                      font-family: Arial, sans-serif;
+                  }
+                  h1, h2 {
+                      text-align: center;
+                  }
+                  .container {
+                      display: grid;
+                      grid-template-columns: repeat(3, 1fr);
+                      gap: 20px;
+                      padding: 20px;
+                  }
+                  .box {
+                      background: rgba(255, 255, 255, 0.1);
+                      border-radius: 10px;
+                      padding: 20px;
+                      text-align: center;
+                  }
+                  button {
+                      background-color: #4CAF50; /* Green */
+                      border: none;
+                      color: white;
+                      padding: 10px 20px;
+                      text-align: center;
+                      text-decoration: none;
+                      display: inline-block;
+                      font-size: 16px;
+                      margin: 4px 2px;
+                      cursor: pointer;
+                      border-radius: 5px;
+                  }
+                  button:hover {
+                      background-color: #45a049;
+                  }
+              </style>
+          </head>
+          <body>
+              <h1>Adrian Vorms</h1>
+              <h2>ITS22</h2>
+              <div class="container">
+                  <div class="box">
+                      <h3>System Information</h3>
+                      <pre id="system-info">Loading...</pre>
+                  </div>
+                  <div class="box">
+                      <h3>Send Verification Code</h3>
+                      <button onclick="sendCode()">Send Code</button>
+                  </div>
+                  <div class="box">
+                      <h3>Validate Code</h3>
+                      <input type="text" id="code" placeholder="Enter verification code">
+                      <button onclick="validateCode()">Validate</button>
+                  </div>
+              </div>
+              <script>
+                  // Fetch and display system info
+                  fetch('http://localhost:5000/neofetch_output.txt')
+                      .then(response => response.text())
+                      .then(data => {
+                          document.getElementById('system-info').textContent = data;
+                      })
+                      .catch(error => {
+                          document.getElementById('system-info').textContent = 'Error loading system information.';
+                      });
+
+                  function sendCode() {
+                      fetch('/send_code', {
+                          method: 'POST',
+                      })
+                      .then(response => response.json())
+                      .then(data => {
+                          alert(data.message);
+                      });
+                  }
+
+                  function validateCode() {
+                      const code = document.getElementById('code').value;
+                      fetch('/validate_code', {
+                          method: 'POST',
+                          headers: {
+                              'Content-Type': 'application/json',
+                          },
+                          body: JSON.stringify({ code: code }),
+                      })
+                      .then(response => response.json())
+                      .then(data => {
+                          alert(data.message);
+                      });
+                  }
+              </script>
+          </body>
+          </html>
+
+    - name: Create systemd service for Flask app
+      copy:
+        dest: /etc/systemd/system/{{ flask_service_name }}.service
+        content: |
+          [Unit]
+          Description=Flask Application
+
+          [Service]
+          ExecStart=/usr/bin/python3 {{ flask_app_path }}
+          WorkingDirectory=/opt
+          Restart=always
+          User=root
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Start and enable Flask app service
+      systemd:
+        name: "{{ flask_service_name }}"
+        enabled: yes
+        state: started
+
+    - name: Configure Apache to serve the Flask app
+      copy:
+        dest: /etc/apache2/sites-available/flask_app.conf
+        content: |
+          <VirtualHost *:80>
+              ServerName your_server_ip  # Replace with your server's IP address
+              WSGIScriptAlias / /opt/flask_app.wsgi
+
+              <Directory /opt>
+                  Require all granted
+              </Directory>
+
+              ErrorLog ${APACHE_LOG_DIR}/flask_app_error.log
+              CustomLog ${APACHE_LOG_DIR}/flask_app_access.log combined
+          </VirtualHost>
+
+    - name: Enable WSGI module
+      command: a2enmod wsgi
+      notify: restart_apache
+
+    - name: Enable the Flask app site
+      command: a2ensite flask_app
+      notify: restart_apache
+
+    - name: Restart Apache
+      service:
+        name: apache2
+        state: restarted
+
+  handlers:
+    - name: restart_apache
+      service:
+        name: apache2
+        state: restarted

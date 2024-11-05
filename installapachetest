@@ -1,0 +1,128 @@
+---
+- hosts: webservers
+  tasks:
+    - name: Install Apache2
+      apt:
+        name: apache2
+        update_cache: yes
+        state: latest
+
+    - name: Install Python3
+      apt:
+        name: python3
+        update_cache: yes
+        state: latest
+
+    - name: Install neofetch
+      apt:
+        name: neofetch
+        state: latest
+
+    - name: Create public_html directory for user (if necessary)
+      file:
+        path: /home/{{ ansible_user }}/public_html
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+
+    - name: Generate neofetch output and save to a file
+      shell: "neofetch --json | tee /var/www/html/neofetch_output.txt"
+      register: neofetch_output
+
+    - name: Debug neofetch output
+      debug:
+        var: neofetch_output.stdout_lines
+
+    - name: Add custom index.html for testing
+      copy:
+        dest: /var/www/html/index.html
+        content: >
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+               <meta charset="UTF-8">
+               <meta name="viewport" content="width=device-width, initial-scale=1.0">
+               <title>Adrian Vorms - ITS22</title>
+               <style>
+                    body {
+                        margin: 0;
+                        height: 100vh;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        font-family: Arial, sans-serif;
+                        background: url('https://www.icegif.com/wp-content/uploads/2023/09/icegif-184.gif') no-repeat center center fixed;
+                        background-size: cover;
+                        color: white;
+                        text-align: center;
+                        overflow: hidden;
+                    }
+
+                    h1 {
+                        font-size: 5em;
+                        margin: 0;
+                        animation: moveLetters 3s infinite alternate;
+                    }
+
+                    h2 {
+                        font-size: 10em;
+                        margin: 0;
+                        margin-top: 20px;
+                    }
+
+                    @keyframes moveLetters {
+                        0% { transform: translateX(-20px); }
+                        100% { transform: translateX(20px); }
+                    }
+
+                    /* Styles for the neofetch tab */
+                    .neofetch-tab {
+                        background-color: rgba(0, 0, 0, 0.8);
+                        padding: 20px;
+                        border-radius: 10px;
+                        margin-top: 20px;
+                        box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+                        max-width: 80%;
+                        text-align: left;
+                    }
+
+                    pre {
+                        white-space: pre-wrap; /* Allows wrapping of long lines */
+                        overflow: auto;
+                        margin: 0;
+                        color: #c5c8c6; /* A light color for terminal output */
+                    }
+               </style>
+          </head>
+          <body>
+              <h1>Adrian Vorms</h1>
+              <h2>ITS22</h2>
+              <div class="neofetch-tab">
+                  <h3>System Information:</h3>
+                  <pre id="neofetch-output"></pre> <!-- Placeholder for neofetch output -->
+              </div>
+              <script>
+                  // Fetch and display neofetch output
+                  fetch('neofetch_output.txt')
+                      .then(response => response.text())
+                      .then(data => {
+                          document.getElementById('neofetch-output').textContent = data;
+                      })
+                      .catch(error => {
+                          console.error('Error fetching neofetch output:', error);
+                          document.getElementById('neofetch-output').textContent = 'Error loading system information.';
+                      });
+              </script>
+          </body>
+          </html>
+        owner: "www-data"  # Apache user
+        group: "www-data"  # Apache group
+        mode: "0644"
+
+  handlers:
+    - name: Restart Apache
+      service:
+        name: apache2
+        state: restarted
