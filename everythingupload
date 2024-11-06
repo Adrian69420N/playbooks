@@ -16,6 +16,6 @@ git add .
 git commit -m "Automated upload of script from $(basename "$current_dir")"
 
 # Push to GitHub using the specified folder and branch
-git push -uf git@github.com:Adrian69420N/skriptimine.git master
+git push -uf git@github.com:Adrian69420N/playbooks.git main
 
 echo "Script uploaded to GitHub successfully from $current_dir"
